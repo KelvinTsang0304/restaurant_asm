@@ -8,7 +8,7 @@
 
 <body>
 <h1 data-position="header">OUHK - Showing Restaurant</h1>
-<h2>Hello <%=  locals.userName%>, welcome back!</h2><br>
+<h2>Hello <%= locals.userName %>, welcome back!</h2><br>
 <a href="/logout" class="btn btn-danger">Logout</a>
 
 <section data-position="restaurants">
@@ -26,15 +26,28 @@
     <span><b>Building:</b> <%= restaurant.address.building %></span><br>
     <span><b>Zipcode:</b> <%= restaurant.address.zipcode %></span><br>
     <span><b>GPS:</b> [<%= restaurant.address.coord %>]</span><br>
+    <span><b>Rating:</b>
+        <% if(restaurant.grades != null){ %>
+            <ol>
+                <% for (var i = 0; i < restaurant.grades.length; i++ ){ %>
+                    <li>
+                      <%= restaurant.grades[i].score %> (<%= restaurant.grades[i].user.name %>)
+                    </li>
+                <% } %>
+            </ol>
+        <% } %>
+    </span><br>
     <span><b>Owner:</b> <%= restaurant.owner.name %></span>
     <br>
-    <%if(locals.userID == restaurant.owner.id){%>
+    <span><a href="/map?id=<%= restaurant._id %>">Map</a></span>
+    <br>
+    <a href="/restaurant/rate?id=<%= restaurant._id %>">Rate</a>
+    <% if(locals.userID == restaurant.owner.id){ %>
         <a href="/restaurant/update?id=<%= restaurant._id %>">Edit</a>
         <a href="/restaurant/delete?id=<%= restaurant._id %>">Delete</a>
     <% } %>
     <a href="/">Back</a>
 </section>
 
-<script src="/main.js"></script>
 </body>
 </html>

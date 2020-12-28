@@ -41,7 +41,7 @@ function updateRecord(body) {
 // DECLARING CUSTOM MIDDLEWARE
 const ifNotLoggedin = (req, res, next) => {
     if (!req.session.isLoggedIn) {
-        return res.render('login.ejs');
+        return res.render('login');
     }
 
     res.locals.userID = req.session.userID;
@@ -67,7 +67,6 @@ MongoClient.connect(connectionString, {useUnifiedTopology: true})
         // ========================
         // Middlewares
         // ========================
-        app.set('view engine', 'ejs')
         app.use(bodyParser.urlencoded({extended: true}))
         app.use(bodyParser.json())
         app.use(fileUpload({
@@ -79,9 +78,9 @@ MongoClient.connect(connectionString, {useUnifiedTopology: true})
         // Routes
         // ========================
         app.get('/', ifNotLoggedin, (req, res, next) => {
-            db.collection('restaurant').find().toArray()
+            restaurantCollection.find().toArray()
                 .then(restaurants => {
-                    res.render('index.ejs', {restaurants: restaurants})
+                    res.render('index', {restaurants: restaurants})
                 })
                 .catch(/* ... */)
         })
@@ -89,18 +88,19 @@ MongoClient.connect(connectionString, {useUnifiedTopology: true})
             let link = req.protocol + '://' + req.get('host');
 
             console.log(req.query.id)
-            db.collection('restaurant').findOne({_id: ObjectId(req.query.id)}).then(restaurant => {
-                res.render('view.ejs', {restaurant: restaurant, link: link})
+            restaurantCollection.findOne({_id: ObjectId(req.query.id)}).then(restaurant => {
+                res.render('view', {restaurant: restaurant, link: link})
             })
         })
 
         app.get('/restaurant/add', ifNotLoggedin, (req, res, next) => {
             let link = req.protocol + '://' + req.get('host');
-            res.render('add.ejs', {link: link})
+            res.render('add', {link: link})
         })
 
         app.post('/restaurant/add', (req, res) => {
             let name = req.body.name;
+            let score = req.body.score;
             let borough = req.body.borough;
             let cuisine = req.body.cuisine;
             let street = req.body.street;
@@ -114,6 +114,7 @@ MongoClient.connect(connectionString, {useUnifiedTopology: true})
 
             restaurantCollection.insertOne({
                 name: name,
+                score: score,
                 borough: borough,
                 cuisine: cuisine,
                 address: {
@@ -162,11 +163,11 @@ MongoClient.connect(connectionString, {useUnifiedTopology: true})
         app.get('/restaurant/update', ifNotLoggedin, ((req, res, next) => {
             let link = req.protocol + '://' + req.get('host');
             console.log(req.query.id)
-            db.collection('restaurant').findOne({_id: ObjectId(req.query.id)}).then(restaurant => {
+            restaurantCollection.findOne({_id: ObjectId(req.query.id)}).then(restaurant => {
                 if (req.session.userID != restaurant.owner.id)
                     res.render("not_arrow", {id: restaurant._id});
                 else
-                    res.render('edit.ejs', {restaurant: restaurant, link: link})
+                    res.render('edit', {restaurant: restaurant, link: link})
             })
         }))
         app.post('/restaurant/update', (req, res) => {
@@ -221,7 +222,7 @@ MongoClient.connect(connectionString, {useUnifiedTopology: true})
                     }
                 )
                     .then(result => res.render(
-                        'update.ejs',
+                        'update',
                         {
                             id: req.body.id,
                             link: link,
@@ -232,19 +233,79 @@ MongoClient.connect(connectionString, {useUnifiedTopology: true})
             }
         )
 
+        app.get('/restaurant/rate', ifNotLoggedin, (req, res, next) => {
+            let link = req.protocol + '://' + req.get('host');
+            restaurantCollection.findOne({_id: ObjectId(req.query.id)}).then(restaurant => {
+                res.render('grade', {restaurant: restaurant, link: link})
+            })
+        });
+
+        app.post('/restaurant/rate', ifNotLoggedin, (req, res, next) => {
+            let link = req.protocol + '://' + req.get('host');
+            restaurantCollection.find({
+                "$and": [
+                    {_id: ObjectId(req.body.id)},
+                    {
+                        grades: {
+                            $elemMatch: {
+                                'user.id':
+                                req.session.userID
+                            }
+                        }
+                    }
+                ]
+            }).toArray().then(result => {
+                console.log(result, result.length);
+                if (result.length == 0) {
+                    restaurantCollection.updateOne(
+                        {_id: ObjectId(req.body.id)},
+                        {
+                            $push: {
+                                grades: {
+                                    $each: [{
+                                        user: {
+                                            id: req.session.userID,
+                                            name: req.session.userName
+                                        },
+                                        score: req.body.score
+                                    }],
+                                }
+                            }
+                        },
+                        {
+                            upsert: true
+                        }
+                    ).catch(error => console.error(error))
+                    res.render('update', {id: req.body.id, link: link})
+                } else {
+                    res.render('error', {id: req.body.id, link: link, 'error': 'Already rated this restaurant!'})
+                }
+            })
+        })
+
+        app.get('/map', ifNotLoggedin, (req, res, next) => {
+            restaurantCollection.findOne({_id: ObjectId(req.query.id)}).then(result => {
+                let link = req.protocol + '://' + req.get('host');
+                res.render('map', {
+                    'restaurant': result,
+                    'link': link
+                })
+            })
+        })
+
         app.get('/restaurant/delete', ifNotLoggedin, (req, res, next) => {
             let link = req.protocol + '://' + req.get('host');
             restaurantCollection.deleteOne(
                 {
                     _id: ObjectId(req.query.id),
-                    'owner.id':req.session.userID != restaurant
+                    'owner.id': req.session.userID
                 }
             )
                 .then(result => {
                     if (result.deletedCount === 0) {
-                        res.render('error.ejs', {id: req.query.id, link: link})
+                        res.render('error', {id: req.query.id, link: link, 'error': 'Action error'})
                     }
-                    res.render('delete.ejs', {id: req.query.id, link: link})
+                    res.render('delete', {id: req.query.id, link: link})
                 })
                 .catch(error => console.error(error))
         })
@@ -252,7 +313,7 @@ MongoClient.connect(connectionString, {useUnifiedTopology: true})
         app.get('/api/restaurant/:type/:value', ((req, res) => {
             switch (req.params.type) {
                 case 'borough':
-                    db.collection('restaurant').find({borough: req.params.value}).toArray().then(restaurants => {
+                    restaurantCollection.find({borough: req.params.value}).toArray().then(restaurants => {
                         if (restaurants.length > 0)
                             res.json(restaurants)
                         else
@@ -260,7 +321,7 @@ MongoClient.connect(connectionString, {useUnifiedTopology: true})
                     });
                     break;
                 case 'cuisine':
-                    db.collection('restaurant').find({borough: req.params.value}).toArray().then(restaurants => {
+                    restaurantCollection.find({borough: req.params.value}).toArray().then(restaurants => {
                         if (restaurants.length > 0)
                             res.json(restaurants)
                         else
@@ -268,7 +329,7 @@ MongoClient.connect(connectionString, {useUnifiedTopology: true})
                     });
                     break;
                 case 'name':
-                    db.collection('restaurant').find({borough: req.params.value}).toArray().then(restaurants => {
+                    restaurantCollection.find({borough: req.params.value}).toArray().then(restaurants => {
                         if (restaurants.length > 0)
                             res.json(restaurants)
                         else
@@ -314,7 +375,7 @@ MongoClient.connect(connectionString, {useUnifiedTopology: true})
                             password: hash_pass
                         })
                             .then(result => {
-                                res.render('register.ejs', {login_success: 'your account has been created successfully, Now you can <a href="/">Login</a>'});
+                                res.render('register', {login_success: 'your account has been created successfully, Now you can <a href="/">Login</a>'});
                             }).catch(err => {
                             // THROW INSERTING USER ERROR'S
                             if (err) throw err;
@@ -330,7 +391,7 @@ MongoClient.connect(connectionString, {useUnifiedTopology: true})
                         return error.msg;
                     });
                     // REDERING login-register PAGE WITH VALIDATION ERRORS
-                    res.render('register.ejs', {
+                    res.render('register', {
                         register_error: allErrors,
                         old_data: req.body
                     });
